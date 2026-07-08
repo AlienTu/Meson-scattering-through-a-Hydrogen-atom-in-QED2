@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meson scattering through a hydrogen atom in QED2</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    window.MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, svg: { fontCache: 'global' } };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="left-pane">
+      <section class="card intro-card">
+        <h1>Meson scattering through a QED2 hydrogen atom</h1>
+        <p>Classical real-time experiment for the bosonized two-flavour massive Schwinger model. The page first relaxes a one-atom static background at the origin, then injects a meson wave from the left and records the outgoing signals near \(x=\pm40\).</p>
+        <p class="small">This is a semiclassical scattering laboratory: background + nonlinear classical evolution + asymptotic mode projection. It is meant for observing how information about a localized atom is written into outgoing meson waves.</p>
+      </section>
+      <section class="card formula-card">
+        <h2>Model</h2>
+        <div class="latex-block">
+          \[\partial_t^2\phi_i-\partial_x^2\phi_i+\frac{g^2}{2}(\phi_1+\phi_2)+\sqrt{\pi}\,\kappa_i\sin(2\sqrt{\pi}\phi_i)=J_i(t,x),\quad i=1,2.\]
+          \[x\in[-L/2,L/2],\qquad L=100,\qquad \Delta x=0.1.\]
+        </div>
+      </section>
+      <section class="card controls-card">
+        <h2>Controls</h2>
+        <div class="buttons"><button id="buildBtn">Build atom</button><button id="startBtn" class="success">Start</button><button id="pauseBtn" class="secondary">Pause</button><button id="resetBtn" class="warning">Reset</button></div>
+        <div class="buttons"><button id="spectrumBtn">Spectrum analysis</button><button id="downloadBtn" class="secondary">Download CSV</button><button id="clearDataBtn" class="secondary">Clear records</button></div>
+        <div class="param-grid">
+          <label>L <input id="L" type="number" value="100" min="40" max="180" step="10"></label>
+          <label>dx <input id="dx" type="number" value="0.1" min="0.05" max="0.4" step="0.05"></label>
+          <label>g <input id="g" type="number" value="1.5" min="0.1" max="6" step="0.05"></label>
+          <label>&kappa;<sub>1</sub> <input id="k1" type="number" value="20" min="0.1" max="80" step="0.5"></label>
+          <label>&kappa;<sub>2</sub> <input id="k2" type="number" value="1" min="0.05" max="10" step="0.05"></label>
+          <label>dt <input id="dt" type="number" value="0.025" min="0.001" max="0.06" step="0.001"></label>
+          <label>substeps/frame <input id="substeps" type="number" value="8" min="1" max="80" step="1"></label>
+          <label>relax steps <input id="relaxSteps" type="number" value="7000" min="500" max="30000" step="500"></label>
+        </div>
+      </section>
+      <section class="card controls-card">
+        <h2>Incoming meson</h2>
+        <div class="param-grid">
+          <label>mode<select id="driveMode"><option value="continuous">continuous left source</option><option value="packet">finite right-moving packet</option></select></label>
+          <label>&omega;<sub>in</sub> <input id="omegaIn" type="number" value="5.0" min="0.1" max="20" step="0.05"></label>
+          <label>A<sub>in</sub> <input id="ampIn" type="number" value="0.03" min="0" max="1" step="0.005"></label>
+          <label>packet width <input id="packetWidth" type="number" value="4.5" min="0.5" max="20" step="0.5"></label>
+          <label>source x <input id="sourceX" type="number" value="-43" min="-49" max="-5" step="0.5"></label>
+          <label>source width <input id="sourceWidth" type="number" value="0.9" min="0.2" max="8" step="0.1"></label>
+          <label>sponge start |x| <input id="spongeStart" type="number" value="45" min="25" max="49" step="1"></label>
+          <label>sponge strength <input id="spongeStrength" type="number" value="1.2" min="0" max="8" step="0.1"></label>
+        </div>
+        <p class="small">Continuous source emits both directions locally; the left-moving part is absorbed by the left sponge, leaving an approximately right-moving beam. Use finite packet for single-shot scattering.</p>
+      </section>
+      <section class="card controls-card">
+        <h2>Observation points</h2>
+        <div class="param-grid">
+          <label>x<sub>L</sub> <input id="xLeftProbe" type="number" value="-40" min="-48" max="-5" step="0.5"></label>
+          <label>x<sub>R</sub> <input id="xRightProbe" type="number" value="40" min="5" max="48" step="0.5"></label>
+          <label>direction sep <input id="probeSep" type="number" value="0.5" min="0.1" max="2" step="0.1"></label>
+          <label>record every <input id="recordEvery" type="number" value="4" min="1" max="100" step="1"></label>
+          <label>max records <input id="maxRecords" type="number" value="8192" min="512" max="65536" step="512"></label>
+        </div>
+      </section>
+      <section class="card status-card">
+        <h2>Status</h2>
+        <div class="status-line">message: <span id="message">not initialized</span></div><div class="status-line">t: <span id="time">0.000</span></div>
+        <div class="status-line">N: <span id="Nreadout">0</span>, dx: <span id="dxReadout">0</span></div><div class="status-line">masses: <span id="massReadout">-</span></div>
+        <div class="status-line">k<sub>in</sub>: <span id="kReadout">-</span></div><div class="status-line">energy drift: <span id="energyReadout">-</span></div>
+      </section>
+    </aside>
+    <main class="right-pane">
+      <section class="card plot-card"><h2>Field animation</h2><canvas id="fieldCanvas" width="1280" height="620"></canvas></section>
+      <section class="card plot-card two-cols"><div><h2>Left probe, \(x\approx -40\)</h2><canvas id="leftTraceCanvas" width="620" height="300"></canvas></div><div><h2>Right probe, \(x\approx +40\)</h2><canvas id="rightTraceCanvas" width="620" height="300"></canvas></div></section>
+      <section class="card plot-card two-cols"><div><h2>Frequency spectrum</h2><canvas id="spectrumCanvas" width="620" height="340"></canvas></div><div><h2>Directional spectrum</h2><canvas id="directionCanvas" width="620" height="340"></canvas></div></section>
+    </main>
+  </div>
+  <script src="sim.js"></script>
+</body>
+</html>
