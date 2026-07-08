@@ -47,12 +47,12 @@ function hqSolveHalfBackground(g,k1,k2,halfL,dx){
     p1=n1;p2=n2;p1[0]=0;p1[Nh-1]=sp/2;p2[0]=0;p2[Nh-1]=-sp/2;
   }
   var info=hqResidualHalf(p1,p2,g,k1,k2,dx);
-  for(var nw=0;nw<30;nw++){
+  for(var nw=0;nw<18;nw++){
     if(info.maxr<1e-9)break;
     var b=new Float64Array(info.r.length);for(var bi=0;bi<b.length;bi++)b[bi]=-info.r[bi];
-    var del=hqCgHalf(b,p1,p2,g,k1,k2,dx,Math.min(1400,8*b.length),1e-10);
+    var del=hqCgHalf(b,p1,p2,g,k1,k2,dx,Math.min(900,6*b.length),1e-9);
     var best1=p1,best2=p2,best=info;
-    for(var ls=0;ls<14;ls++){
+    for(var ls=0;ls<12;ls++){
       var lam=Math.pow(0.5,ls),t1=p1.slice(),t2=p2.slice(),ni=Nh-2;
       for(var qi=1;qi<Nh-1;qi++){var jj=qi-1;t1[qi]=p1[qi]+lam*del[jj];t2[qi]=p2[qi]+lam*del[jj+ni]}
       t1[0]=0;t1[Nh-1]=sp/2;t2[0]=0;t2[Nh-1]=-sp/2;var ti=hqResidualHalf(t1,t2,g,k1,k2,dx);
@@ -77,9 +77,9 @@ buildAtom=function(){
   var half=hqSolveHalfBackground(p.g,p.k1,p.k2,0.5*p.L,p.dx);var full=hqMirrorBackground(half);
   p.N=full.x.length;p.dx=full.dx;p.L=full.x[full.x.length-1]-full.x[0];
   var x=new Float64Array(full.x),phi1=new Float64Array(full.p1),phi2=new Float64Array(full.p2),md=massData(p);
-  st={p:p,x:x,md:md,phi1Static:phi1.slice(),phi2Static:phi2.slice(),phi1:phi1.slice(),phi2:phi2.slice(),pi1:new Float64Array(p.N),pi2:new Float64Array(p.N),force1:new Float64Array(p.N),force2:new Float64Array(p.N),gamma:makeSponge(p,x),time:0,step:0,running:false,built:true,records:[],initialEnergy:null,lastSpectrum:null,probe:updateProbeIndices(p),backgroundResidual:full.res};
+  st={p:p,x:x,md:md,phi1Static:phi1.slice(),phi2Static:phi2.slice(),phi1:phi1.slice(),phi2:phi2.slice(),pi1:new Float64Array(p.N),pi2:new Float64Array(p.N),force1:new Float64Array(p.N),force2:new Float64Array(p.N),gamma:makeSponge(p,x),time:0,step:0,running:false,built:true,records:[],initialEnergy:null,lastSpectrum:null,probe:updateProbeIndices(p),backgroundResidual:full.res,backgroundMethod:'half-newton-mirror'};
   if(p.driveMode==='packet')addIncomingPacket(st);st.initialEnergy=totalEnergy(st);updateReadouts(full.res);drawAll();message('atom built by half-domain Newton; residual '+full.res.toExponential(2));
 };
 ui.buildBtn.removeEventListener('click',oldBuildAtomForPhysicsPatch);
 ui.buildBtn.addEventListener('click',buildAtom);
-buildAtom();
+message('ready; click Build atom first, then Solve bound mode');
