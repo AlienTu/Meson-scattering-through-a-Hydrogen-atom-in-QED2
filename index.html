@@ -15,14 +15,14 @@
     <aside class="left-pane">
       <section class="card intro-card">
         <h1>Meson scattering through a QED2 hydrogen atom</h1>
-        <p>Classical real-time experiment for the bosonized two-flavour massive Schwinger model. The page first relaxes a one-atom static background at the origin, then injects a meson wave from the left and records the outgoing signals near \(x=\pm40\).</p>
-        <p class="small">This is a semiclassical scattering laboratory: background + nonlinear classical evolution + asymptotic mode projection. It is meant for observing how information about a localized atom is written into outgoing meson waves.</p>
+        <p>Classical real-time experiment for the bosonized two-flavour massive Schwinger model. The page relaxes a one-atom static background near the origin, then injects a meson signal from the left and records outgoing fields near \(x=\pm40\).</p>
+        <p class="small">The dynamic boundary now evolves only the perturbation \(\delta\phi=\phi-\phi_{\rm static}\) with an outgoing Sommerfeld condition. This is closer to an open 1+1D universe than a reflecting wall.</p>
       </section>
       <section class="card formula-card">
         <h2>Model</h2>
         <div class="latex-block">
           \[\partial_t^2\phi_i-\partial_x^2\phi_i+\frac{g^2}{2}(\phi_1+\phi_2)+\sqrt{\pi}\,\kappa_i\sin(2\sqrt{\pi}\phi_i)=J_i(t,x),\quad i=1,2.\]
-          \[x\in[-L/2,L/2],\qquad L=100,\qquad \Delta x=0.1.\]
+          \[x\in[-L/2,L/2],\qquad \Delta x=0.1\text{ by default}.\]
         </div>
       </section>
       <section class="card controls-card">
@@ -30,7 +30,7 @@
         <div class="buttons"><button id="buildBtn">Build atom</button><button id="startBtn" class="success">Start</button><button id="pauseBtn" class="secondary">Pause</button><button id="resetBtn" class="warning">Reset</button></div>
         <div class="buttons"><button id="spectrumBtn">Spectrum analysis</button><button id="downloadBtn" class="secondary">Download CSV</button><button id="clearDataBtn" class="secondary">Clear records</button></div>
         <div class="param-grid">
-          <label>L <input id="L" type="number" value="100" min="40" max="180" step="10"></label>
+          <label>L <input id="L" type="number" value="160" min="40" max="500" step="10"></label>
           <label>dx <input id="dx" type="number" value="0.1" min="0.05" max="0.4" step="0.05"></label>
           <label>g <input id="g" type="number" value="1.5" min="0.1" max="6" step="0.05"></label>
           <label>&kappa;<sub>1</sub> <input id="k1" type="number" value="20" min="0.1" max="80" step="0.5"></label>
@@ -38,6 +38,13 @@
           <label>dt <input id="dt" type="number" value="0.025" min="0.001" max="0.06" step="0.001"></label>
           <label>substeps/frame <input id="substeps" type="number" value="8" min="1" max="80" step="1"></label>
           <label>relax steps <input id="relaxSteps" type="number" value="7000" min="500" max="30000" step="500"></label>
+          <label>boundary
+            <select id="boundaryMode">
+              <option value="radiation">open radiation</option>
+              <option value="radiation+sponge">open radiation + sponge</option>
+              <option value="dirichlet">old fixed wall</option>
+            </select>
+          </label>
         </div>
       </section>
       <section class="card controls-card">
@@ -46,19 +53,19 @@
           <label>mode<select id="driveMode"><option value="continuous">continuous left source</option><option value="packet">finite right-moving packet</option></select></label>
           <label>&omega;<sub>in</sub> <input id="omegaIn" type="number" value="5.0" min="0.1" max="20" step="0.05"></label>
           <label>A<sub>in</sub> <input id="ampIn" type="number" value="0.03" min="0" max="1" step="0.005"></label>
-          <label>packet width <input id="packetWidth" type="number" value="4.5" min="0.5" max="20" step="0.5"></label>
-          <label>source x <input id="sourceX" type="number" value="-43" min="-49" max="-5" step="0.5"></label>
+          <label>packet width <input id="packetWidth" type="number" value="4.5" min="0.5" max="30" step="0.5"></label>
+          <label>source x <input id="sourceX" type="number" value="-60" min="-240" max="-5" step="0.5"></label>
           <label>source width <input id="sourceWidth" type="number" value="0.9" min="0.2" max="8" step="0.1"></label>
-          <label>sponge start |x| <input id="spongeStart" type="number" value="45" min="25" max="49" step="1"></label>
-          <label>sponge strength <input id="spongeStrength" type="number" value="1.2" min="0" max="8" step="0.1"></label>
+          <label>sponge start |x| <input id="spongeStart" type="number" value="70" min="25" max="240" step="1"></label>
+          <label>sponge strength <input id="spongeStrength" type="number" value="0" min="0" max="8" step="0.1"></label>
         </div>
-        <p class="small">Continuous source emits both directions locally; the left-moving part is absorbed by the left sponge, leaving an approximately right-moving beam. Use finite packet for single-shot scattering.</p>
+        <p class="small">Recommended: boundary = open radiation, sponge strength = 0. For stress tests, choose open radiation + sponge. Exact transparent boundaries for massive Klein-Gordon waves are nonlocal; this is a local outgoing approximation.</p>
       </section>
       <section class="card controls-card">
         <h2>Observation points</h2>
         <div class="param-grid">
-          <label>x<sub>L</sub> <input id="xLeftProbe" type="number" value="-40" min="-48" max="-5" step="0.5"></label>
-          <label>x<sub>R</sub> <input id="xRightProbe" type="number" value="40" min="5" max="48" step="0.5"></label>
+          <label>x<sub>L</sub> <input id="xLeftProbe" type="number" value="-40" min="-240" max="-5" step="0.5"></label>
+          <label>x<sub>R</sub> <input id="xRightProbe" type="number" value="40" min="5" max="240" step="0.5"></label>
           <label>direction sep <input id="probeSep" type="number" value="0.5" min="0.1" max="2" step="0.1"></label>
           <label>record every <input id="recordEvery" type="number" value="4" min="1" max="100" step="1"></label>
           <label>max records <input id="maxRecords" type="number" value="8192" min="512" max="65536" step="512"></label>
@@ -78,5 +85,6 @@
     </main>
   </div>
   <script src="sim.js"></script>
+  <script src="boundary_patch.js"></script>
 </body>
 </html>
