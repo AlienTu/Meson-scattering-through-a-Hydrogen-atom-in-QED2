@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Meson scattering through a hydrogen atom in QED2</title>
-  <link rel="stylesheet" href="style.css?v=20260708j" />
+  <link rel="stylesheet" href="style.css?v=20260708k" />
   <script>
     window.MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, svg: { fontCache: 'global' } };
   </script>
@@ -19,7 +19,7 @@
       <section class="card intro-card">
         <h1>Meson scattering through a QED2 hydrogen atom</h1>
         <p>Classical real-time laboratory for a one-atom sector of the bosonized two-flavour massive Schwinger model. The default experiment uses \(L=200\), \(\Delta x=0.1\), \(g=1.5\), \(\kappa_1=100\), \(\kappa_2=1\), builds a static atom near \(x=0\), and records signals at \(x_L=-20\), \(x_R=20\).</p>
-        <p class="small">The atom background is built with the same half-domain Newton + mirror construction used in the Hydrogen-formation-quench spectrum page. The internal mode solver now uses the same reference-style block shifted inverse iteration rather than Lanczos checkpoint diagonalization.</p>
+        <p class="small">The atom background is built with the same half-domain Newton + mirror construction used in the Hydrogen-formation-quench spectrum page. The spectrum button now performs a direct Fourier transform of the displayed probe time traces.</p>
       </section>
       <section class="card formula-card">
         <h2>Model</h2>
@@ -105,11 +105,11 @@
       <section class="card plot-card two-cols"><div><h2>Frequency spectrum</h2><canvas id="spectrumCanvas" width="620" height="340"></canvas></div><div><h2>Directional spectrum</h2><canvas id="directionCanvas" width="620" height="340"></canvas></div></section>
     </main>
   </div>
-  <script src="sim.js?v=20260708j"></script>
-  <script src="boundary_patch.js?v=20260708j"></script>
-  <script src="physics_patch.js?v=20260708j"></script>
-  <script src="peaks.js?v=20260708j"></script>
-  <script src="internal_mode.js?v=20260708j"></script>
-  <script src="spectrum_fix.js?v=20260708j"></script>
+  <script src="sim.js?v=20260708k"></script>
+  <script src="boundary_patch.js?v=20260708k"></script>
+  <script src="physics_patch.js?v=20260708k"></script>
+  <script src="peaks.js?v=20260708k"></script>
+  <script src="internal_mode.js?v=20260708k"></script>
+  <script src="spectrum_fix.js?v=20260708k"></script>
 </body>
 </html>
