@@ -1,291 +1,111 @@
-function atomLinearOperator(vec, out) {
-  var p = st.p;
-  var n = p.N;
-  var dx2 = p.dx * p.dx;
-  for (var i = 0; i < n; i++) { out[i] = 0; out[n + i] = 0; }
-  for (var j = 1; j < n - 1; j++) {
-    var u1 = vec[j];
-    var u2 = vec[n + j];
-    var lap1 = (-vec[j - 1] + 2 * u1 - vec[j + 1]) / dx2;
-    var lap2 = (-vec[n + j - 1] + 2 * u2 - vec[n + j + 1]) / dx2;
-    var h11 = 0.5 * p.g * p.g + 2 * Math.PI * p.k1 * Math.cos(TWO_SQRT_PI * st.phi1Static[j]);
-    var h22 = 0.5 * p.g * p.g + 2 * Math.PI * p.k2 * Math.cos(TWO_SQRT_PI * st.phi2Static[j]);
-    var h12 = 0.5 * p.g * p.g;
-    out[j] = lap1 + h11 * u1 + h12 * u2;
-    out[n + j] = lap2 + h12 * u1 + h22 * u2;
+function imDot(a,b){var s=0;for(var i=0;i<a.length;i++)s+=a[i]*b[i];return s}
+function imNorm(a){return Math.sqrt(Math.max(imDot(a,a),0))}
+function imNormalize(a){var n=imNorm(a);if(n>0)for(var i=0;i<a.length;i++)a[i]/=n;return a}
+function imAxpy(y,a,x){for(var i=0;i<y.length;i++)y[i]+=a*x[i]}
+
+function buildFluctuationOp(){
+  var p=st.p,n=p.N-2,dx=p.dx,inv=1/(dx*dx),beta=TWO_SQRT_PI,mix=p.g*p.g;
+  var D0=new Float64Array(n),D1=new Float64Array(n),D2=new Float64Array(n),xs=new Float64Array(n);
+  for(var i=0;i<n;i++){
+    var j=i+1;xs[i]=st.x[j];
+    D0[i]=2*inv+mix+2*Math.PI*p.k1*Math.cos(beta*st.phi1Static[j]);
+    D1[i]=mix;
+    D2[i]=2*inv+mix+2*Math.PI*p.k2*Math.cos(beta*st.phi2Static[j]);
+  }
+  return{n:n,dx:dx,inv:inv,D0:D0,D1:D1,D2:D2,x:xs};
+}
+function applyFluctuationOp(v,op,out){
+  var n=op.n,inv=op.inv;
+  for(var i=0;i<n;i++){
+    var a=2*i,b=a+1,u1=v[a],u2=v[b];
+    var l1=i>0?v[a-2]:0,r1=i<n-1?v[a+2]:0,l2=i>0?v[a-1]:0,r2=i<n-1?v[a+3]:0;
+    out[a]=op.D0[i]*u1+op.D1[i]*u2-inv*(l1+r1);
+    out[b]=op.D1[i]*u1+op.D2[i]*u2-inv*(l2+r2);
   }
 }
-
-function atomDot(a, b) {
-  var s = 0;
-  var dx = st.p.dx;
-  for (var i = 0; i < a.length; i++) s += a[i] * b[i] * dx;
-  return s;
-}
-
-function atomNormalize(v) {
-  var s = Math.sqrt(Math.max(atomDot(v, v), 1e-300));
-  for (var i = 0; i < v.length; i++) v[i] /= s;
-}
-
-function atomProjectOut(v, z) {
-  var c = atomDot(v, z);
-  for (var i = 0; i < v.length; i++) v[i] -= c * z[i];
-}
-
-function translationMode() {
-  var p = st.p;
-  var n = p.N;
-  var z = new Float64Array(2 * n);
-  for (var i = 1; i < n - 1; i++) {
-    z[i] = (st.phi1Static[i + 1] - st.phi1Static[i - 1]) / (2 * p.dx);
-    z[n + i] = (st.phi2Static[i + 1] - st.phi2Static[i - 1]) / (2 * p.dx);
+function inv2sym(a,b,c){var det=a*c-b*b;if(Math.abs(det)<1e-13)det=det>=0?1e-13:-1e-13;return[c/det,-b/det,a/det]}
+function solveShiftedOp(op,sigma,b){
+  var n=op.n,inv=op.inv,coef=inv*inv,E0=new Float64Array(n),E1=new Float64Array(n),E2=new Float64Array(n),G0=new Float64Array(n),G1=new Float64Array(n),prev=null;
+  for(var i=0;i<n;i++){
+    var a=op.D0[i]-sigma,c=op.D2[i]-sigma,bb=op.D1[i],r0=b[2*i],r1=b[2*i+1];
+    if(i>0){a-=coef*prev[0];bb-=coef*prev[1];c-=coef*prev[2];r0+=inv*G0[i-1];r1+=inv*G1[i-1]}
+    var iv=inv2sym(a,bb,c);G0[i]=iv[0]*r0+iv[1]*r1;G1[i]=iv[1]*r0+iv[2]*r1;E0[i]=-inv*iv[0];E1[i]=-inv*iv[1];E2[i]=-inv*iv[2];prev=iv;
   }
-  atomNormalize(z);
-  return z;
+  var x=new Float64Array(2*n);
+  for(var j=n-1;j>=0;j--){var x0=G0[j],x1=G1[j];if(j<n-1){var y0=x[2*j+2],y1=x[2*j+3];x0-=E0[j]*y0+E1[j]*y1;x1-=E1[j]*y0+E2[j]*y1}x[2*j]=x0;x[2*j+1]=x1}
+  return x;
 }
-
-function atomLocalization(v) {
-  var p = st.p;
-  var n = p.N;
-  var near = 0;
-  var total = 0;
-  var R = Math.min(18, 0.25 * p.L);
-  for (var i = 0; i < n; i++) {
-    var den = (v[i] * v[i] + v[n + i] * v[n + i]) * p.dx;
-    total += den;
-    if (Math.abs(st.x[i]) < R) near += den;
+function projectParity(v,op,par){
+  var n=op.n;
+  for(var i=0;i<Math.floor(n/2);i++){
+    var j=n-1-i,a=2*i,b=a+1,c=2*j,d=c+1,p1=0.5*(v[a]+par*v[c]),p2=0.5*(v[b]+par*v[d]);
+    v[a]=p1;v[b]=p2;v[c]=par*p1;v[d]=par*p2;
   }
-  return total > 0 ? near / total : 0;
-}
-
-function negCount2x2(a, b, d) {
-  var tr = a + d;
-  var disc = Math.sqrt(Math.max((a - d) * (a - d) + 4 * b * b, 0));
-  var e1 = 0.5 * (tr - disc);
-  var e2 = 0.5 * (tr + disc);
-  return (e1 < 0 ? 1 : 0) + (e2 < 0 ? 1 : 0);
-}
-
-function blockSturmCount(lambda) {
-  var p = st.p;
-  var n = p.N;
-  var m = n - 2;
-  var aoff = 1 / (p.dx * p.dx);
-  var prev00 = 0, prev01 = 0, prev11 = 0;
-  var havePrev = false;
-  var count = 0;
-  for (var r = 0; r < m; r++) {
-    var j = r + 1;
-    var h11 = 0.5 * p.g * p.g + 2 * Math.PI * p.k1 * Math.cos(TWO_SQRT_PI * st.phi1Static[j]);
-    var h22 = 0.5 * p.g * p.g + 2 * Math.PI * p.k2 * Math.cos(TWO_SQRT_PI * st.phi2Static[j]);
-    var h12 = 0.5 * p.g * p.g;
-    var s00 = 2 * aoff + h11 - lambda;
-    var s01 = h12;
-    var s11 = 2 * aoff + h22 - lambda;
-    if (havePrev) {
-      var det = prev00 * prev11 - prev01 * prev01;
-      if (Math.abs(det) < 1e-18) det = det >= 0 ? 1e-18 : -1e-18;
-      var inv00 = prev11 / det;
-      var inv01 = -prev01 / det;
-      var inv11 = prev00 / det;
-      var aa = aoff * aoff;
-      s00 -= aa * inv00;
-      s01 -= aa * inv01;
-      s11 -= aa * inv11;
-    }
-    count += negCount2x2(s00, s01, s11);
-    prev00 = s00;
-    prev01 = s01;
-    prev11 = s11;
-    havePrev = true;
-  }
-  return count;
-}
-
-function bisectEigenvalue(k, lo, hi) {
-  for (var it = 0; it < 70; it++) {
-    var mid = 0.5 * (lo + hi);
-    if (blockSturmCount(mid) >= k) hi = mid;
-    else lo = mid;
-  }
-  return 0.5 * (lo + hi);
-}
-
-function smallVectorOf2x2(a, b, c, d) {
-  var aa = a * a + c * c;
-  var bb = a * b + c * d;
-  var dd = b * b + d * d;
-  var tr = aa + dd;
-  var disc = Math.sqrt(Math.max((aa - dd) * (aa - dd) + 4 * bb * bb, 0));
-  var lam = 0.5 * (tr - disc);
-  var x, y;
-  if (Math.abs(bb) + Math.abs(aa - lam) > Math.abs(bb) + Math.abs(dd - lam)) {
-    x = -bb;
-    y = aa - lam;
-  } else {
-    x = dd - lam;
-    y = -bb;
-  }
-  var norm = Math.sqrt(x * x + y * y) || 1;
-  return [x / norm, y / norm];
-}
-
-function eigenvectorByShooting(lambda) {
-  var p = st.p;
-  var n = p.N;
-  var m = n - 2;
-  var aoff = 1 / (p.dx * p.dx);
-  var yA0 = new Float64Array(m + 2);
-  var yA1 = new Float64Array(m + 2);
-  var yB0 = new Float64Array(m + 2);
-  var yB1 = new Float64Array(m + 2);
-  yA0[1] = 1;
-  yA1[1] = 0;
-  yB0[1] = 0;
-  yB1[1] = 1;
-  for (var r = 1; r <= m; r++) {
-    var j = r;
-    var site = j;
-    var h11 = 0.5 * p.g * p.g + 2 * Math.PI * p.k1 * Math.cos(TWO_SQRT_PI * st.phi1Static[site]);
-    var h22 = 0.5 * p.g * p.g + 2 * Math.PI * p.k2 * Math.cos(TWO_SQRT_PI * st.phi2Static[site]);
-    var h12 = 0.5 * p.g * p.g;
-    var d11 = 2 * aoff + h11 - lambda;
-    var d22 = 2 * aoff + h22 - lambda;
-    yA0[r + 1] = (d11 * yA0[r] + h12 * yA1[r]) / aoff - yA0[r - 1];
-    yA1[r + 1] = (h12 * yA0[r] + d22 * yA1[r]) / aoff - yA1[r - 1];
-    yB0[r + 1] = (d11 * yB0[r] + h12 * yB1[r]) / aoff - yB0[r - 1];
-    yB1[r + 1] = (h12 * yB0[r] + d22 * yB1[r]) / aoff - yB1[r - 1];
-    var scale = Math.max(Math.abs(yA0[r + 1]), Math.abs(yA1[r + 1]), Math.abs(yB0[r + 1]), Math.abs(yB1[r + 1]), 1);
-    if (scale > 1e80) {
-      for (var q = 0; q <= r + 1; q++) {
-        yA0[q] /= scale;
-        yA1[q] /= scale;
-        yB0[q] /= scale;
-        yB1[q] /= scale;
-      }
-    }
-  }
-  var c = smallVectorOf2x2(yA0[m + 1], yB0[m + 1], yA1[m + 1], yB1[m + 1]);
-  var v = new Float64Array(2 * n);
-  for (var rr = 1; rr <= m; rr++) {
-    v[rr] = c[0] * yA0[rr] + c[1] * yB0[rr];
-    v[n + rr] = c[0] * yA1[rr] + c[1] * yB1[rr];
-  }
-  atomNormalize(v);
+  if(n%2===1&&par<0){var m=Math.floor(n/2);v[2*m]=0;v[2*m+1]=0}
   return v;
 }
-
-function solveInternalMode() {
-  if (!st) buildAtom();
-  var p = st.p;
-  var n = p.N;
-  var len = 2 * n;
-  var zero = translationMode();
-  var low = -10;
-  while (blockSturmCount(low) > 0) low *= 2;
-  var high = st.md.mLight2 * 0.999;
-  var nBelow = blockSturmCount(high);
-  var candidates = [];
-  for (var k = 1; k <= Math.min(nBelow, 8); k++) {
-    var lambda = bisectEigenvalue(k, low, high);
-    var v = eigenvectorByShooting(lambda);
-    var Lv = new Float64Array(len);
-    atomLinearOperator(v, Lv);
-    var ray = atomDot(v, Lv);
-    var omega = Math.sqrt(Math.max(ray, 0));
-    var loc = atomLocalization(v);
-    var zeroOverlap = Math.abs(atomDot(v, zero));
-    var residual = 0;
-    for (var i = 0; i < len; i++) residual += (Lv[i] - ray * v[i]) * (Lv[i] - ray * v[i]) * p.dx;
-    residual = Math.sqrt(residual);
-    candidates.push({ k: k, lambda: ray, omega: omega, loc: loc, zero: zeroOverlap, residual: residual, u: v });
-  }
-  var chosen = null;
-  var zeroCut = 0.25;
-  for (var cidx = 0; cidx < candidates.length; cidx++) {
-    var x = candidates[cidx];
-    if (x.omega > zeroCut && x.omega < st.md.mLight && x.loc > 0.55 && x.zero < 0.50) { chosen = x; break; }
-  }
-  if (!chosen) {
-    for (var cidx2 = 0; cidx2 < candidates.length; cidx2++) {
-      var y = candidates[cidx2];
-      if (y.omega > zeroCut && y.loc > 0.50) { chosen = y; break; }
+function parityError(v,op,par){
+  var n=op.n,e=0,s=0;
+  for(var i=0;i<n;i++){var j=n-1-i,a=2*i,b=a+1,c=2*j,d=c+1,d1=v[a]-par*v[c],d2=v[b]-par*v[d];e+=d1*d1+d2*d2;s+=v[a]*v[a]+v[b]*v[b]}
+  return Math.sqrt(e/Math.max(s,1e-300));
+}
+function orthogonalize(v,vecs){for(var k=0;k<vecs.length;k++){var u=vecs[k],c=imDot(v,u);for(var i=0;i<v.length;i++)v[i]-=c*u[i]}}
+function inverseMode(op,sigma,prev,iters,par){
+  var dim=2*op.n,v=new Float64Array(dim),hv=new Float64Array(dim),tmp=new Float64Array(dim);
+  for(var i=0;i<dim;i++)v[i]=Math.sin(0.37*(i+1)+sigma)+0.31*Math.cos(0.119*(i+2)+0.7*sigma);
+  projectParity(v,op,par);orthogonalize(v,prev);imNormalize(v);
+  for(var it=0;it<iters;it++){var y=solveShiftedOp(op,sigma,v);projectParity(y,op,par);orthogonalize(y,prev);projectParity(y,op,par);imNormalize(y);v=y}
+  applyFluctuationOp(v,op,hv);var lam=imDot(v,hv);for(var j=0;j<dim;j++)tmp[j]=hv[j]-lam*v[j];
+  return{lambda:lam,omega:Math.sqrt(Math.max(lam,0)),vec:v,res:imNorm(tmp),relres:imNorm(tmp)/Math.max(1,Math.abs(lam)),parity:par>0?'even':'odd',perr:parityError(v,op,par)};
+}
+function analyzeMode(m,op,R){
+  var n=op.n,dx=op.dx,rho=new Float64Array(n),nm=0;
+  for(var i=0;i<n;i++){var r=m.vec[2*i]*m.vec[2*i]+m.vec[2*i+1]*m.vec[2*i+1];rho[i]=r;nm+=r*dx}
+  for(var j=0;j<n;j++)rho[j]/=Math.max(nm,1e-300);
+  var ipr=0,wR=0;for(var k=0;k<n;k++){ipr+=rho[k]*rho[k]*dx;if(Math.abs(op.x[k])<R)wR+=rho[k]*dx}
+  m.rho=rho;m.ipr=ipr;m.wR=wR;return m;
+}
+function mergeModes(ms){
+  ms.sort(function(a,b){return a.lambda-b.lambda});var out=[];
+  for(var i=0;i<ms.length;i++){var m=ms[i];if(!Number.isFinite(m.lambda))continue;var last=out[out.length-1];if(last&&last.parity===m.parity&&Math.abs(m.lambda-last.lambda)<2e-4){if(m.relres<last.relres)out[out.length-1]=m}else out.push(m)}
+  return out;
+}
+function fullVectorFromInterleaved(v,op){
+  var N=st.p.N,out=new Float64Array(2*N);
+  for(var i=0;i<op.n;i++){var site=i+1;out[site]=v[2*i];out[N+site]=v[2*i+1]}
+  var dx=st.p.dx,s=0;for(var k=0;k<out.length;k++)s+=out[k]*out[k]*dx;s=Math.sqrt(Math.max(s,1e-300));for(var q=0;q<out.length;q++)out[q]/=s;return out;
+}
+function solveInternalMode(){
+  if(!st)buildAtom();var op=buildFluctuationOp(),lo=st.md.mLight,lo2=lo*lo,R=Math.min(18,0.25*st.p.L),iters=10;
+  var shifts=[];shifts.push(-0.02,0.02,0.05*lo2,0.10*lo2,0.20*lo2,0.35*lo2,0.50*lo2,0.65*lo2,0.80*lo2,0.92*lo2,0.98*lo2);
+  for(var j=0;j<12;j++)shifts.push(lo2*(j+1)/13);
+  var modes=[];
+  for(var pidx=0;pidx<2;pidx++){
+    var par=pidx===0?1:-1,prev=[];
+    for(var s=0;s<shifts.length;s++){
+      var m=inverseMode(op,shifts[s],prev,iters,par);m=analyzeMode(m,op,R);
+      if(m.omega<1.15*lo&&m.relres<1e-5){modes.push(m);prev.push(m.vec)}
+      if(prev.length>6)prev.shift();
     }
   }
-  if (!chosen && candidates.length) chosen = candidates[candidates.length - 1];
-  if (!chosen) {
-    var box0 = document.getElementById('internalModeReadout');
-    if (box0) box0.textContent = 'No sub-threshold eigenvalue found. Check static background.';
-    return null;
-  }
-  st.internalMode = { u: chosen.u.slice(), omega: chosen.omega, lambda: chosen.lambda, candidates: candidates };
-  var lines = [];
-  lines.push('block-tridiagonal Sturm spectrum, no target frequency');
-  lines.push('sub-threshold eigenvalue count = ' + nBelow);
-  lines.push('chosen mode after zero-mode filtering: omega = ' + chosen.omega.toFixed(6) + ', omega^2 = ' + chosen.lambda.toFixed(6));
-  lines.push('continuum estimate: m_light = ' + st.md.mLight.toFixed(6));
-  lines.push('zero cutoff: omega > ' + zeroCut.toFixed(3));
-  lines.push('localization = ' + chosen.loc.toFixed(4) + ', zero overlap = ' + chosen.zero.toExponential(2));
-  lines.push('residual norm = ' + chosen.residual.toExponential(3));
-  lines.push('sub-threshold modes:');
-  for (var rline = 0; rline < candidates.length; rline++) {
-    var cc = candidates[rline];
-    lines.push(cc.k + ': omega=' + cc.omega.toFixed(6) + ', loc=' + cc.loc.toFixed(3) + ', zero=' + cc.zero.toExponential(1) + ', res=' + cc.residual.toExponential(1));
-  }
-  var box = document.getElementById('internalModeReadout');
-  if (box) box.textContent = lines.join('\n');
-  if (typeof message === 'function') message('bound mode solved without target shift: omega = ' + chosen.omega.toFixed(4));
-  return st.internalMode;
+  modes=mergeModes(modes);
+  modes.sort(function(a,b){return a.lambda-b.lambda});
+  var chosen=null,zeroCut=0.25;
+  for(var i=0;i<modes.length;i++){var x=modes[i];if(x.omega>zeroCut&&x.omega<lo&&x.wR>0.45){chosen=x;break}}
+  if(!chosen){for(var ii=0;ii<modes.length;ii++){var y=modes[ii];if(y.omega>zeroCut&&y.wR>0.35){chosen=y;break}}}
+  if(!chosen&&modes.length)chosen=modes[0];
+  if(!chosen){var b0=document.getElementById('internalModeReadout');if(b0)b0.textContent='No mode found. Check static background.';return null}
+  st.internalMode={u:fullVectorFromInterleaved(chosen.vec,op),omega:chosen.omega,lambda:chosen.lambda,candidates:modes};
+  var lines=[];lines.push('method copied from Hydrogen-formation-quench spectrum solver');lines.push('block-tridiagonal operator in interleaved (phi1, phi2) basis');lines.push('gauge convention: M12 = g^2, threshold m_light = '+lo.toFixed(6));lines.push('chosen mode: omega = '+chosen.omega.toFixed(6)+', omega^2 = '+chosen.lambda.toFixed(6));lines.push('parity = '+chosen.parity+', center weight = '+chosen.wR.toFixed(4)+', IPR = '+chosen.ipr.toFixed(4));lines.push('relative residual = '+chosen.relres.toExponential(3)+', parity error = '+chosen.perr.toExponential(2));lines.push('low candidate modes:');
+  for(var r=0;r<Math.min(12,modes.length);r++){var cc=modes[r];lines.push(r+': omega='+cc.omega.toFixed(6)+', parity='+cc.parity+', wR='+cc.wR.toFixed(3)+', res='+cc.relres.toExponential(1))}
+  var box=document.getElementById('internalModeReadout');if(box)box.textContent=lines.join('\n');if(typeof message==='function')message('internal mode solved by reference-style block solver: omega = '+chosen.omega.toFixed(4));return st.internalMode;
 }
-
-function applyInternalMode() {
-  if (!st || !st.internalMode) solveInternalMode();
-  if (!st || !st.internalMode) return;
-  var ampEl = document.getElementById('internalAmp');
-  var phaseEl = document.getElementById('internalPhase');
-  var amp = ampEl ? parseFloat(ampEl.value) : 0.08;
-  var phase = phaseEl ? parseFloat(phaseEl.value) : 0;
-  var p = st.p;
-  var n = p.N;
-  var u = st.internalMode.u;
-  var omega = st.internalMode.omega;
-  st.running = false;
-  st.phi1 = st.phi1Static.slice();
-  st.phi2 = st.phi2Static.slice();
-  st.pi1 = new Float64Array(n);
-  st.pi2 = new Float64Array(n);
-  st.records = [];
-  st.lastSpectrum = null;
-  st.time = 0;
-  st.step = 0;
-  for (var i = 1; i < n - 1; i++) {
-    st.phi1[i] += amp * Math.cos(phase) * u[i];
-    st.phi2[i] += amp * Math.cos(phase) * u[n + i];
-    st.pi1[i] += -amp * omega * Math.sin(phase) * u[i];
-    st.pi2[i] += -amp * omega * Math.sin(phase) * u[n + i];
-  }
-  if (p.driveMode === 'packet') addIncomingPacket(st);
-  st.initialEnergy = totalEnergy(st);
-  drawAll();
-  updateReadouts();
-  if (typeof message === 'function') message('internal vibration applied');
+function applyInternalMode(){
+  if(!st||!st.internalMode)solveInternalMode();if(!st||!st.internalMode)return;var ampEl=document.getElementById('internalAmp'),phaseEl=document.getElementById('internalPhase'),amp=ampEl?parseFloat(ampEl.value):0.08,phase=phaseEl?parseFloat(phaseEl.value):0,p=st.p,n=p.N,u=st.internalMode.u,omega=st.internalMode.omega;
+  st.running=false;st.phi1=st.phi1Static.slice();st.phi2=st.phi2Static.slice();st.pi1=new Float64Array(n);st.pi2=new Float64Array(n);st.records=[];st.lastSpectrum=null;st.time=0;st.step=0;
+  for(var i=1;i<n-1;i++){st.phi1[i]+=amp*Math.cos(phase)*u[i];st.phi2[i]+=amp*Math.cos(phase)*u[n+i];st.pi1[i]+=-amp*omega*Math.sin(phase)*u[i];st.pi2[i]+=-amp*omega*Math.sin(phase)*u[n+i]}
+  if(p.driveMode==='packet')addIncomingPacket(st);st.initialEnergy=totalEnergy(st);drawAll();updateReadouts();if(typeof message==='function')message('internal vibration applied');
 }
-
-function atomOnlyRun() {
-  var dm = document.getElementById('driveMode');
-  if (dm) dm.value = 'none';
-  applyInternalMode();
-  if (st) st.running = true;
-}
-
-function setupInternalButtons() {
-  var solveBtn = document.getElementById('solveInternalBtn');
-  var applyBtn = document.getElementById('applyInternalBtn');
-  var atomBtn = document.getElementById('atomOnlyBtn');
-  if (solveBtn) solveBtn.addEventListener('click', solveInternalMode);
-  if (applyBtn) applyBtn.addEventListener('click', applyInternalMode);
-  if (atomBtn) atomBtn.addEventListener('click', atomOnlyRun);
-}
-
+function atomOnlyRun(){var dm=document.getElementById('driveMode');if(dm)dm.value='none';applyInternalMode();if(st)st.running=true}
+function setupInternalButtons(){var solveBtn=document.getElementById('solveInternalBtn'),applyBtn=document.getElementById('applyInternalBtn'),atomBtn=document.getElementById('atomOnlyBtn');if(solveBtn)solveBtn.addEventListener('click',solveInternalMode);if(applyBtn)applyBtn.addEventListener('click',applyInternalMode);if(atomBtn)atomBtn.addEventListener('click',atomOnlyRun)}
 setupInternalButtons();
