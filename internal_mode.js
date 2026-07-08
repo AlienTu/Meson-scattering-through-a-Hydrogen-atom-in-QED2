@@ -23,16 +23,9 @@ function atomDot(a, b) {
   return s;
 }
 
-function atomNorm(a) { return Math.sqrt(Math.max(atomDot(a, a), 1e-300)); }
-
 function atomNormalize(v) {
-  var s = atomNorm(v);
+  var s = Math.sqrt(Math.max(atomDot(v, v), 1e-300));
   for (var i = 0; i < v.length; i++) v[i] /= s;
-}
-
-function atomProjectOut(v, z) {
-  var c = atomDot(v, z);
-  for (var i = 0; i < v.length; i++) v[i] -= c * z[i];
 }
 
 function translationMode() {
@@ -70,13 +63,13 @@ function jacobiEigenSym(A, maxIter) {
   }
   for (var it = 0; it < maxIter; it++) {
     var p = 0, q = 1, max = 0;
-    for (var i = 0; i < n; i++) {
-      for (var j = i + 1; j < n; j++) {
-        var a = Math.abs(A[i][j]);
-        if (a > max) { max = a; p = i; q = j; }
+    for (var i2 = 0; i2 < n; i2++) {
+      for (var j2 = i2 + 1; j2 < n; j2++) {
+        var a = Math.abs(A[i2][j2]);
+        if (a > max) { max = a; p = i2; q = j2; }
       }
     }
-    if (max < 1e-10) break;
+    if (max < 1e-9) break;
     var app = A[p][p], aqq = A[q][q], apq = A[p][q];
     var tau = (aqq - app) / (2 * apq);
     var t = Math.sign(tau || 1) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
@@ -92,105 +85,115 @@ function jacobiEigenSym(A, maxIter) {
     A[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
     A[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
     A[p][q] = A[q][p] = 0;
-    for (var k = 0; k < n; k++) {
-      var vkp = V[k][p], vkq = V[k][q];
-      V[k][p] = c * vkp - s * vkq;
-      V[k][q] = s * vkp + c * vkq;
+    for (var k2 = 0; k2 < n; k2++) {
+      var vkp = V[k2][p], vkq = V[k2][q];
+      V[k2][p] = c * vkp - s * vkq;
+      V[k2][q] = s * vkp + c * vkq;
     }
   }
   var vals = [];
-  for (var i = 0; i < n; i++) vals.push({ value: A[i][i], index: i });
+  for (var i3 = 0; i3 < n; i3++) vals.push({ value: A[i3][i3], index: i3 });
   vals.sort(function(a, b) { return a.value - b.value; });
   return { values: vals, vectors: V };
+}
+
+function buildDirectFluctuationMatrix(windowHalfWidth) {
+  var p = st.p;
+  var dx2 = p.dx * p.dx;
+  var idx = [];
+  for (var i = 1; i < p.N - 1; i++) {
+    if (Math.abs(st.x[i]) <= windowHalfWidth) idx.push(i);
+  }
+  var m = idx.length;
+  var dim = 2 * m;
+  var A = [];
+  for (var r = 0; r < dim; r++) A[r] = new Float64Array(dim);
+  for (var a = 0; a < m; a++) {
+    var j = idx[a];
+    var h11 = 0.5 * p.g * p.g + 2 * Math.PI * p.k1 * Math.cos(TWO_SQRT_PI * st.phi1Static[j]);
+    var h22 = 0.5 * p.g * p.g + 2 * Math.PI * p.k2 * Math.cos(TWO_SQRT_PI * st.phi2Static[j]);
+    var h12 = 0.5 * p.g * p.g;
+    var r1 = a;
+    var r2 = m + a;
+    A[r1][r1] = 2 / dx2 + h11;
+    A[r2][r2] = 2 / dx2 + h22;
+    A[r1][r2] = h12;
+    A[r2][r1] = h12;
+    if (a > 0) {
+      A[r1][r1 - 1] = -1 / dx2;
+      A[r2][r2 - 1] = -1 / dx2;
+    }
+    if (a < m - 1) {
+      A[r1][r1 + 1] = -1 / dx2;
+      A[r2][r2 + 1] = -1 / dx2;
+    }
+  }
+  return { A: A, idx: idx, m: m, dim: dim };
+}
+
+function fullVectorFromWindow(eigVec, idx, m) {
+  var n = st.p.N;
+  var v = new Float64Array(2 * n);
+  for (var a = 0; a < m; a++) {
+    var j = idx[a];
+    v[j] = eigVec[a];
+    v[n + j] = eigVec[m + a];
+  }
+  atomNormalize(v);
+  return v;
 }
 
 function solveInternalMode() {
   if (!st) buildAtom();
   var p = st.p;
-  var n = p.N;
-  var len = 2 * n;
+  var windowHalfWidth = Math.min(24, 0.35 * p.L);
+  var pack = buildDirectFluctuationMatrix(windowHalfWidth);
+  var eig = jacobiEigenSym(pack.A, 60 * pack.dim * pack.dim);
   var z = translationMode();
-  var m = Math.min(90, len - 2);
-  var Q = [];
-  var alpha = new Float64Array(m);
-  var beta = new Float64Array(m);
-  var q = new Float64Array(len);
-  for (var i = 1; i < n - 1; i++) {
-    var env = Math.exp(-0.5 * st.x[i] * st.x[i] / 64);
-    q[i] = env * (0.7 + 0.3 * Math.sin(0.37 * st.x[i]));
-    q[n + i] = -env * (0.9 + 0.2 * Math.cos(0.51 * st.x[i]));
-  }
-  atomProjectOut(q, z);
-  atomNormalize(q);
-  var qPrev = new Float64Array(len);
-  var w = new Float64Array(len);
-  var actualM = 0;
-  for (var it = 0; it < m; it++) {
-    Q.push(q.slice());
-    atomLinearOperator(q, w);
-    alpha[it] = atomDot(q, w);
-    for (var k = 0; k < len; k++) w[k] -= alpha[it] * q[k] + (it > 0 ? beta[it - 1] * qPrev[k] : 0);
-    atomProjectOut(w, z);
-    for (var r = 0; r < Q.length; r++) atomProjectOut(w, Q[r]);
-    beta[it] = atomNorm(w);
-    actualM = it + 1;
-    if (beta[it] < 1e-9 || it === m - 1) break;
-    qPrev = q;
-    q = w.slice();
-    for (var k2 = 0; k2 < len; k2++) q[k2] /= beta[it];
-  }
-  var T = [];
-  for (var a = 0; a < actualM; a++) {
-    T[a] = new Float64Array(actualM);
-    T[a][a] = alpha[a];
-    if (a + 1 < actualM) T[a][a + 1] = T[a + 1][a] = beta[a];
-  }
-  var eig = jacobiEigenSym(T, 30 * actualM * actualM);
   var candidates = [];
-  for (var c = 0; c < Math.min(20, eig.values.length); c++) {
-    var ridx = eig.values[c].index;
+  for (var c = 0; c < Math.min(30, eig.values.length); c++) {
+    var col = eig.values[c].index;
     var lambda = eig.values[c].value;
-    var v = new Float64Array(len);
-    for (var a2 = 0; a2 < actualM; a2++) {
-      var coeff = eig.vectors[a2][ridx];
-      for (var b2 = 0; b2 < len; b2++) v[b2] += coeff * Q[a2][b2];
-    }
-    atomProjectOut(v, z);
-    atomNormalize(v);
-    var Lv = new Float64Array(len);
+    var ev = new Float64Array(pack.dim);
+    for (var r = 0; r < pack.dim; r++) ev[r] = eig.vectors[r][col];
+    var v = fullVectorFromWindow(ev, pack.idx, pack.m);
+    var Lv = new Float64Array(2 * p.N);
     atomLinearOperator(v, Lv);
     lambda = atomDot(v, Lv);
     var omega = Math.sqrt(Math.max(lambda, 0));
     var loc = atomLocalization(v);
-    var ovZero = Math.abs(atomDot(v, z));
-    candidates.push({ lambda: lambda, omega: omega, loc: loc, zero: ovZero, u: v });
+    var zero = Math.abs(atomDot(v, z));
+    candidates.push({ lambda: lambda, omega: omega, loc: loc, zero: zero, u: v });
   }
   candidates.sort(function(a, b) { return a.lambda - b.lambda; });
   var chosen = null;
-  for (var c2 = 0; c2 < candidates.length; c2++) {
-    var x = candidates[c2];
-    if (x.lambda > 1e-6 && x.omega < st.md.mLight && x.loc > 0.55 && x.zero < 1e-3) { chosen = x; break; }
+  for (var i = 0; i < candidates.length; i++) {
+    var x = candidates[i];
+    if (x.omega > 0.25 && x.omega < st.md.mLight && x.loc > 0.65) { chosen = x; break; }
   }
   if (!chosen) {
-    for (var c3 = 0; c3 < candidates.length; c3++) {
-      var y = candidates[c3];
-      if (y.lambda > 1e-6 && y.loc > 0.45 && y.zero < 1e-3) { chosen = y; break; }
+    for (var j2 = 0; j2 < candidates.length; j2++) {
+      var y = candidates[j2];
+      if (y.omega > 0.25 && y.loc > 0.55) { chosen = y; break; }
     }
   }
   if (!chosen) chosen = candidates[0];
   st.internalMode = { u: chosen.u.slice(), omega: chosen.omega, lambda: chosen.lambda, candidates: candidates };
   var lines = [];
+  lines.push('direct matrix diagonalization on central window |x| < ' + windowHalfWidth.toFixed(1));
+  lines.push('matrix dimension = ' + pack.dim + ' x ' + pack.dim);
   lines.push('chosen bound mode: omega = ' + chosen.omega.toFixed(6) + ', omega^2 = ' + chosen.lambda.toFixed(6));
   lines.push('continuum estimate: m_light = ' + st.md.mLight.toFixed(6));
+  lines.push('expected benchmark: omega_B about 1.79, threshold about 2.92');
   lines.push('localization = ' + chosen.loc.toFixed(4) + ', zero overlap = ' + chosen.zero.toExponential(2));
-  lines.push('lowest Ritz modes:');
-  for (var c4 = 0; c4 < Math.min(8, candidates.length); c4++) {
-    var cc = candidates[c4];
-    lines.push(c4 + ': omega=' + cc.omega.toFixed(6) + ', loc=' + cc.loc.toFixed(3) + ', zero=' + cc.zero.toExponential(1));
+  lines.push('lowest direct matrix modes:');
+  for (var q = 0; q < Math.min(10, candidates.length); q++) {
+    var cc = candidates[q];
+    lines.push(q + ': omega=' + cc.omega.toFixed(6) + ', loc=' + cc.loc.toFixed(3) + ', zero=' + cc.zero.toExponential(1));
   }
   var box = document.getElementById('internalModeReadout');
   if (box) box.textContent = lines.join('\n');
-  if (typeof message === 'function') message('linear fluctuation mode solved: omega = ' + chosen.omega.toFixed(4));
+  if (typeof message === 'function') message('direct matrix bound mode solved: omega = ' + chosen.omega.toFixed(4));
   return st.internalMode;
 }
 
