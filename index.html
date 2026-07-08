@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Meson scattering through a hydrogen atom in QED2</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=20260708f" />
   <script>
     window.MathJax = { tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] }, svg: { fontCache: 'global' } };
   </script>
@@ -16,7 +19,7 @@
       <section class="card intro-card">
         <h1>Meson scattering through a QED2 hydrogen atom</h1>
         <p>Classical real-time laboratory for a one-atom sector of the bosonized two-flavour massive Schwinger model. The default experiment uses \(L=200\), \(\Delta x=0.1\), \(g=1.5\), \(\kappa_1=100\), \(\kappa_2=1\), builds a static atom near \(x=0\), and records signals at \(x_L=-20\), \(x_R=20\).</p>
-        <p class="small">The atom background is now built with the same half-domain Newton + mirror construction used in the Hydrogen-formation-quench spectrum page. The fluctuation solver uses the same QED2 convention, with mass matrix entries \(g^2+2\pi\kappa_i\cos(2\sqrt\pi\phi_i)\) and off-diagonal coupling \(g^2\).</p>
+        <p class="small">The atom background is built with the same half-domain Newton + mirror construction used in the Hydrogen-formation-quench spectrum page. The internal mode is then solved on the full spatial domain, not on one half-axis and not by imposing parity by hand.</p>
       </section>
       <section class="card formula-card">
         <h2>Model</h2>
@@ -57,7 +60,7 @@
           <label>phase <input id="internalPhase" type="number" value="0" min="0" max="6.283" step="0.05"></label>
         </div>
         <pre id="internalModeReadout" class="peak-output">No internal mode solved yet.</pre>
-        <p class="small">This solves the low fluctuation spectrum using a block-tridiagonal inverse-iteration scan with parity projection, following the Hydrogen-formation-quench spectrum solver. Applying the mode creates a classical coherent internal vibration, not a single-quantum Fock excitation.</p>
+        <p class="small">Static atom construction uses half-axis symmetry. The fluctuation eigenproblem is solved afterwards on the full spatial domain with a full-space Lanczos eigensolver and edge-mode filtering. Applying the mode creates a classical coherent internal vibration, not a single-quantum Fock excitation.</p>
       </section>
       <section class="card controls-card">
         <h2>Incoming meson</h2>
@@ -100,10 +103,10 @@
       <section class="card plot-card two-cols"><div><h2>Frequency spectrum</h2><canvas id="spectrumCanvas" width="620" height="340"></canvas></div><div><h2>Directional spectrum</h2><canvas id="directionCanvas" width="620" height="340"></canvas></div></section>
     </main>
   </div>
-  <script src="sim.js"></script>
-  <script src="boundary_patch.js"></script>
-  <script src="physics_patch.js"></script>
-  <script src="peaks.js"></script>
-  <script src="internal_mode.js"></script>
+  <script src="sim.js?v=20260708f"></script>
+  <script src="boundary_patch.js?v=20260708f"></script>
+  <script src="physics_patch.js?v=20260708f"></script>
+  <script src="peaks.js?v=20260708f"></script>
+  <script src="internal_mode.js?v=20260708f"></script>
 </body>
 </html>
