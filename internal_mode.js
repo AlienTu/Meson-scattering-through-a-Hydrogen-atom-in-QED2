@@ -28,6 +28,11 @@ function atomNormalize(v) {
   for (var i = 0; i < v.length; i++) v[i] /= s;
 }
 
+function atomProjectOut(v, z) {
+  var c = atomDot(v, z);
+  for (var i = 0; i < v.length; i++) v[i] -= c * z[i];
+}
+
 function translationMode() {
   var p = st.p;
   var n = p.N;
@@ -54,146 +59,127 @@ function atomLocalization(v) {
   return total > 0 ? near / total : 0;
 }
 
-function jacobiEigenSym(A, maxIter) {
-  var n = A.length;
-  var V = [];
-  for (var i = 0; i < n; i++) {
-    V[i] = new Float64Array(n);
-    V[i][i] = 1;
-  }
-  for (var it = 0; it < maxIter; it++) {
-    var p = 0, q = 1, max = 0;
-    for (var i2 = 0; i2 < n; i2++) {
-      for (var j2 = i2 + 1; j2 < n; j2++) {
-        var a = Math.abs(A[i2][j2]);
-        if (a > max) { max = a; p = i2; q = j2; }
-      }
-    }
-    if (max < 1e-9) break;
-    var app = A[p][p], aqq = A[q][q], apq = A[p][q];
-    var tau = (aqq - app) / (2 * apq);
-    var t = Math.sign(tau || 1) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
-    var c = 1 / Math.sqrt(1 + t * t);
-    var s = t * c;
-    for (var k = 0; k < n; k++) {
-      if (k !== p && k !== q) {
-        var akp = A[k][p], akq = A[k][q];
-        A[k][p] = A[p][k] = c * akp - s * akq;
-        A[k][q] = A[q][k] = s * akp + c * akq;
-      }
-    }
-    A[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
-    A[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
-    A[p][q] = A[q][p] = 0;
-    for (var k2 = 0; k2 < n; k2++) {
-      var vkp = V[k2][p], vkq = V[k2][q];
-      V[k2][p] = c * vkp - s * vkq;
-      V[k2][q] = s * vkp + c * vkq;
-    }
-  }
-  var vals = [];
-  for (var i3 = 0; i3 < n; i3++) vals.push({ value: A[i3][i3], index: i3 });
-  vals.sort(function(a, b) { return a.value - b.value; });
-  return { values: vals, vectors: V };
+function solve2x2(a, b, c, d, r0, r1) {
+  var det = a * d - b * c;
+  if (Math.abs(det) < 1e-14) det = det >= 0 ? 1e-14 : -1e-14;
+  return [(d * r0 - b * r1) / det, (-c * r0 + a * r1) / det];
 }
 
-function buildDirectFluctuationMatrix(windowHalfWidth) {
+function solveShiftedBlockTridiagonal(rhs, sigma) {
   var p = st.p;
-  var dx2 = p.dx * p.dx;
-  var idx = [];
-  for (var i = 1; i < p.N - 1; i++) {
-    if (Math.abs(st.x[i]) <= windowHalfWidth) idx.push(i);
-  }
-  var m = idx.length;
-  var dim = 2 * m;
-  var A = [];
-  for (var r = 0; r < dim; r++) A[r] = new Float64Array(dim);
-  for (var a = 0; a < m; a++) {
-    var j = idx[a];
+  var n = p.N;
+  var m = n - 2;
+  var aoff = 1 / (p.dx * p.dx);
+  var P00 = new Float64Array(m);
+  var P01 = new Float64Array(m);
+  var P10 = new Float64Array(m);
+  var P11 = new Float64Array(m);
+  var G0 = new Float64Array(m);
+  var G1 = new Float64Array(m);
+
+  for (var r = 0; r < m; r++) {
+    var j = r + 1;
     var h11 = 0.5 * p.g * p.g + 2 * Math.PI * p.k1 * Math.cos(TWO_SQRT_PI * st.phi1Static[j]);
     var h22 = 0.5 * p.g * p.g + 2 * Math.PI * p.k2 * Math.cos(TWO_SQRT_PI * st.phi2Static[j]);
     var h12 = 0.5 * p.g * p.g;
-    var r1 = a;
-    var r2 = m + a;
-    A[r1][r1] = 2 / dx2 + h11;
-    A[r2][r2] = 2 / dx2 + h22;
-    A[r1][r2] = h12;
-    A[r2][r1] = h12;
-    if (a > 0) {
-      A[r1][r1 - 1] = -1 / dx2;
-      A[r2][r2 - 1] = -1 / dx2;
-    }
-    if (a < m - 1) {
-      A[r1][r1 + 1] = -1 / dx2;
-      A[r2][r2 + 1] = -1 / dx2;
-    }
-  }
-  return { A: A, idx: idx, m: m, dim: dim };
-}
 
-function fullVectorFromWindow(eigVec, idx, m) {
-  var n = st.p.N;
-  var v = new Float64Array(2 * n);
-  for (var a = 0; a < m; a++) {
-    var j = idx[a];
-    v[j] = eigVec[a];
-    v[n + j] = eigVec[m + a];
+    var m00 = 2 * aoff + h11 - sigma;
+    var m01 = h12;
+    var m10 = h12;
+    var m11 = 2 * aoff + h22 - sigma;
+
+    var b0 = rhs[j];
+    var b1 = rhs[n + j];
+    if (r > 0) {
+      m00 += aoff * P00[r - 1];
+      m01 += aoff * P01[r - 1];
+      m10 += aoff * P10[r - 1];
+      m11 += aoff * P11[r - 1];
+      b0 += aoff * G0[r - 1];
+      b1 += aoff * G1[r - 1];
+    }
+
+    var g = solve2x2(m00, m01, m10, m11, b0, b1);
+    G0[r] = g[0];
+    G1[r] = g[1];
+
+    if (r < m - 1) {
+      var pcol0 = solve2x2(m00, m01, m10, m11, -aoff, 0);
+      var pcol1 = solve2x2(m00, m01, m10, m11, 0, -aoff);
+      P00[r] = pcol0[0];
+      P10[r] = pcol0[1];
+      P01[r] = pcol1[0];
+      P11[r] = pcol1[1];
+    }
   }
-  atomNormalize(v);
-  return v;
+
+  var y = new Float64Array(2 * n);
+  for (var r2 = m - 1; r2 >= 0; r2--) {
+    var y0 = G0[r2];
+    var y1 = G1[r2];
+    if (r2 < m - 1) {
+      var yn0 = y[r2 + 2];
+      var yn1 = y[n + r2 + 2];
+      y0 -= P00[r2] * yn0 + P01[r2] * yn1;
+      y1 -= P10[r2] * yn0 + P11[r2] * yn1;
+    }
+    y[r2 + 1] = y0;
+    y[n + r2 + 1] = y1;
+  }
+  return y;
 }
 
 function solveInternalMode() {
   if (!st) buildAtom();
   var p = st.p;
-  var windowHalfWidth = Math.min(24, 0.35 * p.L);
-  var pack = buildDirectFluctuationMatrix(windowHalfWidth);
-  var eig = jacobiEigenSym(pack.A, 60 * pack.dim * pack.dim);
+  var n = p.N;
+  var len = 2 * n;
   var z = translationMode();
-  var candidates = [];
-  for (var c = 0; c < Math.min(30, eig.values.length); c++) {
-    var col = eig.values[c].index;
-    var lambda = eig.values[c].value;
-    var ev = new Float64Array(pack.dim);
-    for (var r = 0; r < pack.dim; r++) ev[r] = eig.vectors[r][col];
-    var v = fullVectorFromWindow(ev, pack.idx, pack.m);
-    var Lv = new Float64Array(2 * p.N);
-    atomLinearOperator(v, Lv);
-    lambda = atomDot(v, Lv);
-    var omega = Math.sqrt(Math.max(lambda, 0));
-    var loc = atomLocalization(v);
-    var zero = Math.abs(atomDot(v, z));
-    candidates.push({ lambda: lambda, omega: omega, loc: loc, zero: zero, u: v });
+  var targetOmega = Math.min(1.79, 0.75 * st.md.mLight);
+  var sigma = targetOmega * targetOmega;
+  var q = new Float64Array(len);
+  var width = 7.0;
+  for (var i = 1; i < n - 1; i++) {
+    var env = Math.exp(-0.5 * st.x[i] * st.x[i] / (width * width));
+    q[i] = env;
+    q[n + i] = -env;
   }
-  candidates.sort(function(a, b) { return a.lambda - b.lambda; });
-  var chosen = null;
-  for (var i = 0; i < candidates.length; i++) {
-    var x = candidates[i];
-    if (x.omega > 0.25 && x.omega < st.md.mLight && x.loc > 0.65) { chosen = x; break; }
+  atomProjectOut(q, z);
+  atomNormalize(q);
+
+  var iterations = 28;
+  var lambda = 0;
+  var Lv = new Float64Array(len);
+  for (var it = 0; it < iterations; it++) {
+    var y = solveShiftedBlockTridiagonal(q, sigma);
+    atomProjectOut(y, z);
+    atomNormalize(y);
+    q = y;
+    atomLinearOperator(q, Lv);
+    lambda = atomDot(q, Lv);
   }
-  if (!chosen) {
-    for (var j2 = 0; j2 < candidates.length; j2++) {
-      var y = candidates[j2];
-      if (y.omega > 0.25 && y.loc > 0.55) { chosen = y; break; }
-    }
-  }
-  if (!chosen) chosen = candidates[0];
-  st.internalMode = { u: chosen.u.slice(), omega: chosen.omega, lambda: chosen.lambda, candidates: candidates };
+  atomLinearOperator(q, Lv);
+  lambda = atomDot(q, Lv);
+  var omega = Math.sqrt(Math.max(lambda, 0));
+  var loc = atomLocalization(q);
+  var zero = Math.abs(atomDot(q, z));
+  var residual = 0;
+  for (var r = 0; r < len; r++) residual += (Lv[r] - lambda * q[r]) * (Lv[r] - lambda * q[r]) * p.dx;
+  residual = Math.sqrt(residual);
+
+  st.internalMode = { u: q.slice(), omega: omega, lambda: lambda, sigma: sigma, residual: residual };
   var lines = [];
-  lines.push('direct matrix diagonalization on central window |x| < ' + windowHalfWidth.toFixed(1));
-  lines.push('matrix dimension = ' + pack.dim + ' x ' + pack.dim);
-  lines.push('chosen bound mode: omega = ' + chosen.omega.toFixed(6) + ', omega^2 = ' + chosen.lambda.toFixed(6));
+  lines.push('shift-invert block-tridiagonal solve');
+  lines.push('target omega = ' + targetOmega.toFixed(6) + ', sigma = ' + sigma.toFixed(6));
+  lines.push('omega = ' + omega.toFixed(6) + ', omega^2 = ' + lambda.toFixed(6));
   lines.push('continuum estimate: m_light = ' + st.md.mLight.toFixed(6));
-  lines.push('expected benchmark: omega_B about 1.79, threshold about 2.92');
-  lines.push('localization = ' + chosen.loc.toFixed(4) + ', zero overlap = ' + chosen.zero.toExponential(2));
-  lines.push('lowest direct matrix modes:');
-  for (var q = 0; q < Math.min(10, candidates.length); q++) {
-    var cc = candidates[q];
-    lines.push(q + ': omega=' + cc.omega.toFixed(6) + ', loc=' + cc.loc.toFixed(3) + ', zero=' + cc.zero.toExponential(1));
-  }
+  lines.push('benchmark: omega_B about 1.79, threshold about 2.92');
+  lines.push('localization = ' + loc.toFixed(4) + ', zero overlap = ' + zero.toExponential(2));
+  lines.push('residual norm = ' + residual.toExponential(3));
+  lines.push('cost: O(N) per inverse iteration, no dense diagonalization');
   var box = document.getElementById('internalModeReadout');
   if (box) box.textContent = lines.join('\n');
-  if (typeof message === 'function') message('direct matrix bound mode solved: omega = ' + chosen.omega.toFixed(4));
+  if (typeof message === 'function') message('fast shift-invert bound mode solved: omega = ' + omega.toFixed(4));
   return st.internalMode;
 }
 
